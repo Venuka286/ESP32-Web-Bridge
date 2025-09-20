@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>ESP32 LED Scheduler</title>
+<style>
+body { font-family: Arial; text-align: center; background: #f4f4f4; }
+.card { background: white; padding: 20px; margin: 20px auto; width: 350px; border-radius: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+button { padding: 10px 20px; margin-top: 10px; border: none; border-radius: 6px; cursor: pointer; background: #007bff; color: white; }
+input, select { padding: 8px; margin: 5px; border-radius: 6px; border: 1px solid #ccc; }
+</style>
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+  const firebaseConfig = {
+    apiKey: "AIzaSyAqf068ngycVwesJ42PPnc76ZfMbPoN3lQ",
+    authDomain: "esp32-scheduler.firebaseapp.com",
+    databaseURL: "https://esp32-scheduler-default-rtdb.firebaseio.com",
+    projectId: "esp32-scheduler",
+    storageBucket: "esp32-scheduler.firebasestorage.app",
+    messagingSenderId: "488050746457",
+    appId: "1:488050746457:web:1f40cdfa6f6f8d8c8cfd48",
+    measurementId: "G-YBC56CG62W"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
+</script>
+</head>
+<body>
+<h2>ESP32 LED Scheduler</h2>
+
+<div class="card">
+<h3>Connection Status</h3>
+<p id="wifiStatus">Loading...</p>
+<p id="timeStatus">Time: --:--:--</p>
+<p id="ledStatus">LEDs: --</p>
+</div>
+
+<div class="card">
+<h3>Set Schedule</h3>
+ON: <input type="time" id="onTime"><br>
+OFF: <input type="time" id="offTime"><br>
+<button onclick="setSchedule()">Save Schedule</button>
+</div>
+
+<div class="card">
+<h3>Mode</h3>
+<select id="mode">
+<option value="1">Steady</option>
+<option value="2">Blink</option>
+</select><br>
+Blink(ms): <input type="number" id="blink" value="1000"><br>
+<button onclick="setMode()">Save Mode</button>
+</div>
+
+<div class="card">
+<h3>Manual Control</h3>
+<button onclick="manualLED('ON')">LED ON</button>
+<button onclick="manualLED('OFF')">LED OFF</button><br><br>
+
+<h3>Set RTC Manually</h3>
+<input type="datetime-local" id="rtcTime">
+<button onclick="setTime()">Set RTC</button><br><br>
+
+<h3>Set Time from Phone</h3>
+<p id="clientTimeLabel">Time: --:--:--</p>
+<button onclick="sendClientTime()">Use Phone Time</button>
+</div>
+
+<div class="card">
+<h3>Change AP Password</h3>
+<button onclick="changeAPPassword()">Change AP Password</button>
+</div>
+
+<script>
+let sec = 0;
+
+function refreshStatus() {
+  fetch('/status').then(r => r.json()).then(data => {
+    document.getElementById('wifiStatus').innerText = "Wi-Fi: " + data.wifi;
+    document.getElementById('ledStatus').innerText = "LEDs: " + data.led;
+
+    let parts = data.time.split(":");
+    let h = parseInt(parts[0]);
+    let m = parseInt(parts[1]);
+    sec = parseInt(parts[2]);
+    document.getElementById('timeStatus').innerText = "Time: " + pad(h) + ":" + pad(m) + ":" + pad(sec);
+  });
+}
+
+setInterval(() => {
+  sec++;
+  if(sec>59) sec=0;
+  let timeText = document.getElementById('timeStatus').innerText;
+  if(timeText.includes(":")){
+    let hm = timeText.split(" ")[2].split(":");
+    let h = parseInt(hm[0]);
+    let m = parseInt(hm[1]);
+    document.getElementById('timeStatus').innerText = "Time: " + pad(h) + ":" + pad(m) + ":" + pad(sec);
+  }
+}, 1000);
+
+function pad(n){ return (n<10?'0':'')+n;}
+
+function setSchedule(){
+  let on = document.getElementById('onTime').value;
+  let off = document.getElementById('offTime').value;
+  fetch(`/set?on=${on}&off=${off}`).then(r=>r.text()).then(alert);
+}
+
+function setMode(){
+  let mode = document.getElementById('mode').value;
+  let blink = document.getElementById('blink').value;
+  fetch(`/mode?m=${mode}&b=${blink}`).then(r=>r.text()).then(alert);
+}
+
+function manualLED(state){
+  fetch(`/manual?led=${state}`).then(r=>r.text()).then(alert);
+}
+
+function setTime(){
+  let dt = document.getElementById('rtcTime').value;
+  fetch(`/settime?dt=${dt}`).then(r=>r.text()).then(alert);
+}
+
+function sendClientTime(){
+  let now = new Date();
+  let year = now.getFullYear();
+  let month = ("0" + (now.getMonth()+1)).slice(-2);
+  let day = ("0" + now.getDate()).slice(-2);
+  let hour = ("0" + now.getHours()).slice(-2);
+  let minute = ("0" + now.getMinutes()).slice(-2);
+  let second = ("0" + now.getSeconds()).slice(-2);
+
+  let dtString = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+  document.getElementById("clientTimeLabel").innerText = `Time: ${hour}:${minute}:${second}`;
+  fetch(`/settime?dt=${dtString}`).then(r=>r.text()).then(alert);
+}
+
+function changeAPPassword(){
+  let pw = prompt("Enter admin password:");
+  if(pw===null) return;
+  let newpass = prompt("Enter new AP password:");
+  if(newpass===null) return;
+  fetch(`/changepass?password=${pw}&newpass=${newpass}`).then(r=>r.text()).then(alert);
+}
+
+setInterval(refreshStatus, 1000);
+refreshStatus();
+</script>
+</body>
+</html>
